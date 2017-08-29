@@ -61,7 +61,7 @@ func (g *gethExec) xecIs(e xec) bool {
 	var isxec = geth
 	// check for parity-ness
 	lastEl := filepath.Base(g.Executable)
-	if strings.HasPrefix(lastEl, "parity") {
+	if strings.HasPrefix(lastEl, "parity") || strings.HasSuffix(lastEl, "parity") || strings.Contains(lastEl, "parity") {
 		isxec = parity
 	}
 
@@ -203,17 +203,17 @@ func connectNodes(runs []*gethExec) {
 				enodeTrim2 := strings.Split(run2.Enode, "?")[0]
 				enodeTrim1 := strings.Split(run.Enode, "?")[0]
 				if run.xecIs(geth) {
-					res, err = run.rpcBool("admin_addPeer", []string{run2.Enode})
+					res, err = run.rpcBool("admin_addPeer", []string{run2.Enode}) // strings.Replace(run2.Enode, "[::]", "127.0.0.1", 1)
 				} else if run.xecIs(parity) {
-					res, err = run.rpcBool("parity_addReservedPeer", []string{enodeTrim2})
+					res, err = run.rpcBool("parity_addReservedPeer", []string{enodeTrim2}) // strings.Replace(enodeTrim2, "[::]", "127.0.0.1", 1)
 				}
 
 				// if fails, try reverse (cuz parity doesn't like some port values)
 				if err != nil {
 					if run2.xecIs(geth) {
-						res, err = run2.rpcBool("admin_addPeer", []string{run.Enode})
+						res, err = run2.rpcBool("admin_addPeer", []string{run.Enode}) // strings.Replace(run.Enode, "[::]", "127.0.0.1", 1)
 					} else if run2.xecIs(parity) {
-						res, err = run2.rpcBool("parity_addReservedPeer", []string{enodeTrim1})
+						res, err = run2.rpcBool("parity_addReservedPeer", []string{enodeTrim1}) // strings.Replace(enodeTrim1, "[::]", "127.0.0.1", 1)
 					}
 				}
 				log.Println("Add peer", run.ChainIdentity, run2.ChainIdentity, "ok:", res, "error:", err)
