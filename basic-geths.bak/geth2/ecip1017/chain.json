@@ -2,6 +2,7 @@
   "id": "ecip1017",
   "network": 42,
   "name": "ECIP1017 Testchain",
+  "consensus": "ethash-test",
   "genesis": {
     "nonce": "0x00006d6f7264656e",
     "timestamp": "",
@@ -52,6 +53,7 @@
       {
         "name": "GasReprice",
         "block": 60,
+        "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
         "features": [
           {
             "id": "gastable",
@@ -64,6 +66,7 @@
       {
         "name": "Diehard",
         "block": 70,
+        "requiredHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
         "features": [
           {
             "id": "eip155",
