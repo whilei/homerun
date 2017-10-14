@@ -19,7 +19,6 @@ import (
 
 	"github.com/ethereumproject/go-ethereum/rpc"
 	"github.com/phayes/permbits"
-	// "github.com/BurntSushi/toml"
 )
 
 var defaultGethRPCAPIMethods = []string{"admin", "eth", "net", "web3", "miner", "personal", "debug"}
@@ -34,6 +33,11 @@ var errRPCResponse = errors.New("No response from RPC")
 var hrBaseDir string
 var hrRPCDomain = "http://localhost"
 
+// execMartyr is for stress-testing/repeated killing a process for
+// trying to cause ungraceful shutdowns. It should be the name of the
+// executable.
+var martyr string
+
 type xec int
 
 const (
@@ -43,6 +47,7 @@ const (
 
 type gethExec struct {
 	Executable    string
+	Command       *exec.Cmd
 	ChainIdentity string // set by containing subdir name
 	Enode         string // set automatically
 	// RPCPort       int    // set in homerun, with 8545 as reference default
@@ -71,6 +76,7 @@ func (g *gethExec) xecIs(e xec) bool {
 func init() {
 	flag.StringVar(&hrBaseDir, "dir", "", "base directory containing chain dirs")
 	flag.StringVar(&hrRPCDomain, "rpc-domain", "http://localhost", "domain for geth rpc's")
+	flag.StringVar(&martyr, "martyr", "", "stress test an executable")
 }
 
 func main() {
@@ -82,33 +88,53 @@ func main() {
 		log.Fatalln(err)
 	}
 
+	//wg := sync.WaitGroup{}
+	//wg.Add(len(runs))
+
 	log.Printf("Found %d chains...\n", len(runs))
 	var dones = make(chan error)
 
 	startNodes(runs, dones)
 	connectNodes(runs)
 
+	// listen for CTRL-C or other SIGTERM/SIGKILL on `homerun` and kill all associated
+	// execs.
+	go func() {
+		// sigc is a single-val channel for listening to program interrupt
+		var sigc = make(chan os.Signal, 1)
+		signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(sigc)
+		sig := <-sigc
+		log.Printf("Got %v, shutting down...", sig)
+		for _, r := range runs {
+			killCmd(r.Command)
+		}
+		close(dones)
+	}()
+
 	for _, r := range runs {
 		log.Printf("Chain '%s' configured: %v", r.ChainIdentity, r.ConfFlags)
 	}
 
-	// block until dones closes (interrupt or error)
+	// if martyr exec is set (for stress testing),
+	// kill kill kill kill!
+	if martyr != "" {
+
+	}
+
 	<-dones
 }
 
-func killCmds(cmds []*exec.Cmd) {
-	for i, c := range cmds {
-		if err := c.Process.Kill(); err != nil {
-			log.Println("Failed to kill", err)
-		} else {
-			log.Printf("Killed process %d\n", i)
-		}
+func killCmd(cmd *exec.Cmd) {
+	p := cmd.Process.Pid
+	if err := cmd.Process.Kill(); err != nil {
+		log.Println("Failed to kill", err)
+	} else {
+		log.Printf("Killed process %v\n", p)
 	}
 }
 
 func startNodes(runs []*gethExec, dones chan error) {
-
-	cmds := []*exec.Cmd{}
 
 	go func() {
 		select {
@@ -124,30 +150,23 @@ func startNodes(runs []*gethExec, dones chan error) {
 			log.Printf("Starting chain '%s'...\n", run.ChainIdentity)
 
 			cmd := exec.Command(run.Executable, run.ConfFlags...)
-
-			cmds = append(cmds, cmd)
+			run.Command = cmd
 
 			// capture helpful debugging error output
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
+			// kill all commands in case one fails on startup
 			if e := cmd.Run(); e != nil {
 				log.Printf("Chain '%s' error: %s: %s\n", run.ChainIdentity, e, stderr.String())
-				killCmds(cmds) // kill all commands in case one fails
+				for _, r := range runs {
+					if r.Command != nil {
+						killCmd(r.Command)
+					}
+				}
 				dones <- e
 			}
 		}(run)
 	}
-
-	go func() {
-		// sigc is a single-val channel for listening to program interrupt
-		var sigc = make(chan os.Signal, 1)
-		signal.Notify(sigc, os.Interrupt, syscall.SIGTERM)
-		defer signal.Stop(sigc)
-		sig := <-sigc
-		log.Printf("Got %v, shutting down...", sig)
-		killCmds(cmds)
-		close(dones)
-	}()
 
 	// Wait for rpc to get up and running
 	var ticker = time.Tick(time.Second)
@@ -334,7 +353,7 @@ func (g *gethExec) rpcString(method string, params interface{}) (string, error) 
 		return "", err
 	}
 
-	var res rpc.JSONSuccessResponse
+	var res rpc.JSONResponse
 	if err := g.Client.Recv(&res); err != nil {
 		return "", err
 	}
@@ -361,7 +380,7 @@ func (g *gethExec) rpcBool(method string, params interface{}) (bool, error) {
 		return false, err
 	}
 
-	var res rpc.JSONSuccessResponse
+	var res rpc.JSONResponse
 	if err := g.Client.Recv(&res); err != nil {
 		return false, err
 	}
@@ -388,7 +407,7 @@ func (g *gethExec) rpcMap(method string, params interface{}) (map[string]interfa
 		return nil, err
 	}
 
-	var res rpc.JSONSuccessResponse
+	var res rpc.JSONResponse
 	if err := g.Client.Recv(&res); err != nil {
 		return nil, err
 	}
